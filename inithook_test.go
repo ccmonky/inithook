@@ -50,7 +50,7 @@ func TestInitHook(t *testing.T) {
 	}
 	attrs := inithook.AttrsNotSetted()
 	if len(attrs) != 1 {
-		t.Error("should == 1")
+		t.Errorf("should == 1, got %v", attrs)
 	}
 	if attrs[0] != "attr_not_used" {
 		t.Error("attr_not_used should not be executed")

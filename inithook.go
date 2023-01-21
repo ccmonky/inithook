@@ -3,6 +3,7 @@ package inithook
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -27,11 +28,10 @@ func RegisterAttrSetter[T any](attr, setterName string, setter AttrSetter[T]) er
 	if setter == nil {
 		return fmt.Errorf("inithook: nil attr setter")
 	}
-	attrConstructorsLock.Lock()
-	if _, ok := attrConstructors[attr]; !ok {
-		attrConstructors[attr] = NewConstructor[T]()
+	err := attrConstructors.Register(context.Background(), attr, NewConstructor[T]())
+	if err != nil && !errors.Is(err, ErrAlreadyExists) {
+		return err
 	}
-	attrConstructorsLock.Unlock()
 	settersLock.Lock()
 	if setters[attr] == nil {
 		setters[attr] = map[SetterName]any{}
@@ -81,9 +81,7 @@ func ExecuteAttrSetters(ctx context.Context, attr string, value any) error {
 			return fmt.Errorf("inithook: attr %s setters %s executed failed: %v", attr, name, err)
 		}
 	}
-	settersUsedLock.Lock()
-	settersUsed[attr] = struct{}{}
-	settersUsedLock.Unlock()
+	settersUsed.Set(context.Background(), attr, struct{}{})
 	return nil
 }
 
@@ -91,14 +89,12 @@ func ExecuteAttrSetters(ctx context.Context, attr string, value any) error {
 func AttrsNotSetted() []Attr {
 	var attrNotUsed []Attr
 	settersLock.Lock()
-	settersUsedLock.Lock()
 	for attr := range setters {
-		if _, ok := settersUsed[attr]; !ok {
+		if !settersUsed.Has(context.Background(), attr) {
 			attrNotUsed = append(attrNotUsed, attr)
 		}
 	}
 	settersLock.Unlock()
-	settersUsedLock.Unlock()
 	return attrNotUsed
 }
 
@@ -135,20 +131,21 @@ func NewConstructor[T any]() func() any {
 
 // GetAttrConstructor return attr value constructor used to assist the serialization procedure
 func GetAttrConstructor(attr string) func() any {
-	attrConstructorsLock.Lock()
-	defer attrConstructorsLock.Unlock()
-	return attrConstructors[attr]
+	value, _ := attrConstructors.Get(context.Background(), attr)
+	return value
 }
 
 var (
-	setters               = map[Attr]map[SetterName]any{}
-	settersLock           sync.Mutex
-	attrConstructors      = map[Attr]func() any{}
-	attrConstructorsLock  sync.Mutex
+	setters     = map[Attr]map[SetterName]any{}
+	settersLock sync.Mutex
+
 	constructorsCache     = map[reflect.Type]func() any{}
 	constructorsCacheLock sync.Mutex
-	settersUsed           = map[Attr]struct{}{}
-	settersUsedLock       sync.Mutex
+	// constructorsCache = NewMap[reflect.Type, func() any]() // NOTE: refelct.Type is not comparable!
+
+	attrConstructors = NewMap[Attr, func() any]()
+
+	settersUsed = NewMap[Attr, struct{}]()
 )
 
 type genericAttrSetter func(ctx context.Context, value any) error
