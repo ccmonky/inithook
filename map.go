@@ -150,6 +150,39 @@ func (m *Map[K, V]) Range(ctx context.Context, fn func(key, value any) bool) {
 	}
 }
 
+// Keys return all keys
+func (m *Map[K, V]) Keys(ctx context.Context) []K {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	var keys []K
+	for k := range m.instances {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Values return all values
+func (m *Map[K, V]) Values(ctx context.Context) []V {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	var values []V
+	for _, v := range m.instances {
+		values = append(values, v)
+	}
+	return values
+}
+
+// Map return map with all items
+func (m *Map[K, V]) Map(ctx context.Context) map[K]V {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	kvs := make(map[K]V, len(m.instances))
+	for k, v := range m.instances {
+		kvs[k] = v
+	}
+	return kvs
+}
+
 // DefaultLoader load default instance of V according to key
 type DefaultLoader[V any] interface {
 	LoadDefault(ctx context.Context, key any) (V, error)
